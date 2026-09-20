@@ -1,0 +1,19 @@
+ROBOT NAVIGATION BRIEF
+
+Develop navigation logic for a mobile robot.
+
+The robot receives information about whether the path
+in front, to the left, and to the right is blocked.
+
+It may also receive information about whether its goal
+is ahead, to the left, or to the right.
+
+The robot should prefer moving toward its goal whenever
+this can be done safely.
+
+It must never move into a blocked direction.
+
+If there is no safe direction available, it must stop.
+
+The navigation component will eventually be tested in
+multiple simulated environments.

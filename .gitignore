@@ -1,0 +1,33 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS-generated
+Thumbs.db
+
+# Local model downloads (in case the user adds them later)
+*.gguf
+*.bin
+models/
+
+# ---------------------------------------------------------------------------
+# Course-required outputs MUST be tracked. Do NOT add these to .gitignore:
+#   - robot_requirements.txt
+#   - artifacts/requirements.json
+# ---------------------------------------------------------------------------
