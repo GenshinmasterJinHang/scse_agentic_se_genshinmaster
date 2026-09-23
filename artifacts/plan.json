@@ -1,0 +1,22 @@
+{
+  "strategy": "Navigate toward the goal direction (ahead, left, or right) whenever it can be done safely, prioritizing forward movement and avoiding obstacles.",
+  "decisions": [
+    {
+      "condition": "The robot can move forward without encountering an obstacle.",
+      "action": "FORWARD"
+    },
+    {
+      "condition": "The robot can move left without encountering an obstacle and the goal direction is left.",
+      "action": "LEFT"
+    },
+    {
+      "condition": "The robot can move right without encountering an obstacle and the goal direction is right.",
+      "action": "RIGHT"
+    },
+    {
+      "condition": "The robot cannot move forward, left, or right without encountering an obstacle.",
+      "action": "STOP"
+    }
+  ],
+  "stop_condition": "The robot must issue STOP when it cannot move forward, left, or right without encountering an obstacle."
+}

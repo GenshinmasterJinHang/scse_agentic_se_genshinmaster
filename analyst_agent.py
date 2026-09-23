@@ -92,8 +92,14 @@ def call_qwen(
     *,
     structured: bool = False,
     temperature: float = 0.2,
+    schema: dict[str, Any] | None = None,
 ) -> str:
-    """Send a non-streaming request and return Qwen's message.content unchanged."""
+    """Send a non-streaming request and return Qwen's message.content unchanged.
+
+    When ``structured`` is True, the request carries ``format=<schema>``. The
+    schema defaults to ``REQUIREMENTS_SCHEMA`` (analyst_agent's contract); other
+    agents (``planner_agent``, ``developer_agent``) pass their own.
+    """
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip().rstrip("/")
     parsed = urlsplit(base_url)
     if (
@@ -128,11 +134,11 @@ def call_qwen(
         "options": {"temperature": temperature, "num_predict": 1024},
     }
     if structured:
-        payload["format"] = REQUIREMENTS_SCHEMA
+        payload["format"] = schema if schema is not None else REQUIREMENTS_SCHEMA
 
-    # Per the project contract, formal Analyst requests must send think=false.
+    # Per the project contract, formal structured requests must send think=false.
     # Send it explicitly so models that enable thinking by default stay quiet.
-    # The QWEN_THINK env var remains an opt-in for Stage A exploration.
+    # The QWEN_THINK env var remains an opt-in for unstructured (Stage A) use.
     if structured:
         payload["think"] = False
     else:

@@ -1,0 +1,4 @@
+{
+  "description": "This function implements a robot navigation strategy that prioritizes forward movement, followed by left or right movement based on the goal direction, while avoiding obstacles.",
+  "code": "def decide_action(sensor_data, goal_direction):\n    if sensor_data['forward_clear']:\n        return 'FORWARD'\n    elif sensor_data['left_clear'] and goal_direction == 'left':\n        return 'LEFT'\n    elif sensor_data['right_clear'] and goal_direction == 'right':\n        return 'RIGHT'\n    else:\n        return 'STOP'"
+}
