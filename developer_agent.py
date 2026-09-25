@@ -2,9 +2,9 @@
 
 The Developer Agent receives the validated plan dict (context isolation) and
 emits a JSON object containing a description plus a ``code`` field. The
-``code`` field must be syntactically valid Python that defines at least one
-function related to robot navigation. The runner saves that string to
-``navigation_logic.py`` for the simulator to import.
+``code`` field must be syntactically valid Python that defines exactly one
+top-level function named ``decide_next_move(state)``. The runner saves that
+string to ``navigation_logic.py`` for the simulator to import.
 
 Reuses ``call_qwen`` and ``OllamaError`` from ``analyst_agent``.
 """
@@ -13,23 +13,14 @@ from __future__ import annotations
 
 import ast
 import json
-import keyword
 from typing import Any
 
 from analyst_agent import OllamaError, call_qwen
 
 
 REQUIRED_CODE_KEYS = {"description", "code"}
-NAV_HINTS = (
-    "navigation",
-    "navigate",
-    "decide",
-    "act",
-    "action",
-    "move",
-    "step",
-    "plan",
-)
+REQUIRED_ENTRY_FUNCTION = "decide_next_move"
+ALLOWED_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "STOP")
 
 
 DEVELOPER_SCHEMA: dict[str, Any] = {
@@ -51,11 +42,17 @@ Constraints:
 - Output exactly one JSON object with two keys and no others:
     * description: a nonempty English string explaining what the function does.
     * code: a nonempty Python source string that compiles cleanly.
-- The code must define at least one top-level function whose name relates to
-  robot navigation (e.g. decide_action, navigation_step, choose_move, ...).
-- The function may take whatever sensor/state arguments you need; the planner
-  did not fix them. Use plain types (numbers, strings, tuples, dicts) -- do not
-  depend on third-party packages.
+- The code MUST define exactly one top-level function named
+  ``decide_next_move`` with exactly one parameter named ``state``. The
+  simulator only calls this entry point -- do not invent other names
+  (decide_action, navigation_step, choose_move, ...). Helper functions are
+  allowed but the entry point must be ``decide_next_move(state)``.
+- ``state`` is the sensor/goal snapshot the robot receives; you may read any
+  keys out of it (use ``state.get(key, default)`` for safety). Use plain
+  Python types (numbers, strings, tuples, dicts) -- do not depend on
+  third-party packages.
+- The function must return one of the strings ``"FORWARD"``, ``"LEFT"``,
+  ``"RIGHT"``, or ``"STOP"``.
 - Do not include imports beyond the Python standard library. Do not write to
   files or print to stdout. Do not include markdown fences or any prose.
 - The code must reflect the Planner's strategy and decisions verbatim. Do not
@@ -83,11 +80,12 @@ def _reject_constant(value: str) -> None:
 
 
 def _looks_like_navigation(code: str) -> tuple[bool, str]:
-    """Return (ok, function_name) for the first navigation-looking function.
+    """Return (ok, function_name) when ``code`` defines ``decide_next_move(state)``.
 
-    The Developer Agent is judged on architecture (does the code parse? does it
-    expose a navigation function?), not on whether the function is semantically
-    correct -- that is tested by the simulator.
+    The Developer Agent must define a top-level function named
+    ``decide_next_move`` whose single parameter is named ``state``. Other
+    helper functions are allowed but the simulator only calls this one entry
+    point.
     """
     try:
         tree = ast.parse(code)
@@ -96,13 +94,24 @@ def _looks_like_navigation(code: str) -> tuple[bool, str]:
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            name = node.name
-            if keyword.iskeyword(name):
-                return False, f"function name {name!r} is a Python keyword"
-            lname = name.lower()
-            if any(hint in lname for hint in NAV_HINTS):
-                return True, name
-    return False, "code does not define a top-level function related to navigation"
+            if node.name != REQUIRED_ENTRY_FUNCTION:
+                continue
+            args = node.args.args
+            if len(args) != 1:
+                return False, (
+                    f"{REQUIRED_ENTRY_FUNCTION} must take exactly one "
+                    f"parameter named 'state'; got {len(args)} parameters."
+                )
+            if args[0].arg != "state":
+                return False, (
+                    f"{REQUIRED_ENTRY_FUNCTION} parameter must be named "
+                    f"'state'; got {args[0].arg!r}."
+                )
+            return True, REQUIRED_ENTRY_FUNCTION
+    return False, (
+        f"code does not define a top-level function named "
+        f"{REQUIRED_ENTRY_FUNCTION!r}"
+    )
 
 
 def validate_developer_output(data: Any) -> dict[str, Any]:

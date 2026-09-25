@@ -40,15 +40,13 @@ GOOD_PLAN = {
 def _good_code() -> str:
     return textwrap.dedent(
         """
-        def decide_action(forward_clear, left_clear, right_clear, goal_direction):
-            if goal_direction == "ahead" and forward_clear:
+        def decide_next_move(state):
+            if state.get("goal_ahead") and not state.get("front_blocked"):
                 return "FORWARD"
-            if goal_direction == "left" and left_clear:
+            if state.get("goal_on_left") and not state.get("left_blocked"):
                 return "LEFT"
-            if goal_direction == "right" and right_clear:
+            if state.get("goal_on_right") and not state.get("right_blocked"):
                 return "RIGHT"
-            if not (forward_clear or left_clear or right_clear):
-                return "STOP"
             return "STOP"
         """
     ).strip()
@@ -94,26 +92,41 @@ class ValidateDeveloperOutputTests(unittest.TestCase):
 
     def test_code_must_be_parseable_python(self) -> None:
         env = _good_envelope()
-        env["code"] = "def decide_action(:\n    pass"
+        # Drop the trailing ':' so the function header becomes a syntax error.
+        env["code"] = "def decide_next_move(state)\n    return 'STOP'\n"
         with self.assertRaises(DeveloperValidationError) as ctx:
             validate_developer_output(env)
         self.assertIn("not valid Python", str(ctx.exception))
 
-    def test_code_without_navigation_function_rejected(self) -> None:
+    def test_code_without_decide_next_move_rejected(self) -> None:
         env = _good_envelope()
         env["code"] = "x = 1\ny = 2\n"
         with self.assertRaises(DeveloperValidationError) as ctx:
             validate_developer_output(env)
-        self.assertIn("navigation", str(ctx.exception))
+        self.assertIn("decide_next_move", str(ctx.exception))
 
-    def test_function_keyword_name_rejected(self) -> None:
+    def test_wrong_entry_function_name_rejected(self) -> None:
         env = _good_envelope()
-        env["code"] = "def class_(): pass\n"
-        # 'class' is a keyword; any name starting with it would also fail navigation hint.
-        # Try a function named with a literal keyword.
-        env["code"] = "def if_(): pass\n"  # still not navigation-shaped
-        with self.assertRaises(DeveloperValidationError):
+        env["code"] = "def decide_action(state):\n    return 'STOP'\n"
+        with self.assertRaises(DeveloperValidationError) as ctx:
             validate_developer_output(env)
+        self.assertIn("decide_next_move", str(ctx.exception))
+
+    def test_wrong_parameter_name_rejected(self) -> None:
+        env = _good_envelope()
+        env["code"] = "def decide_next_move(sensor_data):\n    return 'STOP'\n"
+        with self.assertRaises(DeveloperValidationError) as ctx:
+            validate_developer_output(env)
+        self.assertIn("state", str(ctx.exception))
+
+    def test_wrong_parameter_count_rejected(self) -> None:
+        env = _good_envelope()
+        env["code"] = (
+            "def decide_next_move(state, goal_direction):\n    return 'STOP'\n"
+        )
+        with self.assertRaises(DeveloperValidationError) as ctx:
+            validate_developer_output(env)
+        self.assertIn("state", str(ctx.exception))
 
 
 class RunDeveloperTests(unittest.TestCase):
@@ -184,7 +197,7 @@ class RunDeveloperTests(unittest.TestCase):
             run_developer("not a dict")  # type: ignore[arg-type]
 
     def test_duplicate_key_in_response_rejected(self) -> None:
-        dup = '{"description": "d", "description": "d", "code": "def decide_action(): pass"}'
+        dup = '{"description": "d", "description": "d", "code": "def decide_next_move(state): return \\"STOP\\""}'
         with mock_opener(respond=lambda _p: _envelope(dup)):
             with self.assertRaises(DeveloperValidationError):
                 run_developer(GOOD_PLAN)

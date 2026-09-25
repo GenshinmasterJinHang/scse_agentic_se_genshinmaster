@@ -1,0 +1,8 @@
+{
+  "created_at_utc": "20260925T014219_337419Z",
+  "model": "qwen3:8b",
+  "temperature": 0.2,
+  "requested_runs": 1,
+  "brief_sha256": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+  "system_prompt_sha256": "2399a534a8457e728462f3a8fd8f69ce964119528fccdc8eb170404d1e23f045"
+}

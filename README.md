@@ -1,151 +1,185 @@
 # scse_agentic_se_&lt;groupname&gt;
 
-SCSE 26《Requirements Engineering》与《Plan and Develop》课程作业：用本地 Ollama + qwen3:8b，从机器人导航 brief 出发，依次通过 Analyst → Planner → Developer 三个 Agent 生成可执行的需求、计划与 Python 导航代码。
+SCSE '26 coursework for *Requirements Engineering*, *Plan and Develop*, and *Testing*. A robot navigation brief is processed by three agents (Analyst → Planner → Developer) using local Ollama + qwen3:8b, producing validated requirements, a navigation plan, and executable Python code. Every field in the output files comes from the model — Python only checks structure and legality, never fakes a preset answer.
 
-## 项目目标
+The Testing stage adds a four-test pipeline (Level 1 smoke tests + Level 2 behavioural tests) on top of the production pipeline.
 
-`brief.txt` 里自然语言描述的机器人导航规则，经三阶段自动传递：
+## Project Goal
 
-1. **Analyst** 提取可校验的需求 JSON（四字段）。
-2. **Planner** 把需求转化为带策略/决策/停止条件的计划 JSON。
-3. **Developer** 把计划写成一个可被模拟器使用的 Python 模块。
+The natural-language robot navigation rules in `brief.txt` are passed through four automated stages:
 
-每一步都直接调用本机 Ollama 中已下载的 qwen3:8b，输出文件中的字段**全部来自模型响应**，Python 代码只做格式与合法性校验，不会用预设答案冒充。
+1. **Analyst** extracts a validated four-field requirements JSON object.
+2. **Planner** turns the requirements into a plan JSON object with strategy / decisions / stop_condition.
+3. **Developer** writes the plan into a Python module that defines `decide_next_move(state)` for the simulator to import.
+4. **Tests** verify each stage and the generated navigation logic.
 
-## 三阶段流水线
+Each stage calls the locally installed `qwen3:8b` in Ollama.
 
-| 阶段 | 程序 | 模型输出形态 | 输出文件 | 关键约束 |
-| ---- | ---- | ------------ | -------- | -------- |
-| A0 自由文本 | `brief_to_req.py` | 编号列表 + Open Questions | `robot_requirements.txt`、`artifacts/runs/<时间戳>/run_*.txt` | 不带 JSON Schema，便于观察表达差异 |
-| A1 需求 | `run_analyst.py` | 固定四字段 JSON | `artifacts/requirements.json` | 强制 schema + 严格校验，schema 不预设 goal 答案 |
-| B1 计划 | `run_planner.py` | `{strategy, decisions[], stop_condition}` JSON | `artifacts/plan.json` | 接收的**只有**需求，不含 Analyst 对话（context isolation） |
-| B2 代码 | `run_developer.py` | `{description, code}` JSON | `artifacts/developer_output.json` + `navigation_logic.py` | code 必须是可解析的 Python 且定义 nav 函数 |
+## Three-Stage Pipeline
 
-每一步都向 Ollama 发送 `stream=false`、`think=false`、`options.temperature=0.2`、`options.num_predict=1024`，并在请求体里带 `format=<该阶段专属 Schema>`。`call_qwen()` 是三阶段共用的 HTTP 客户端，schema 由调用方注入。
+| Stage | Script | Model Output Shape | Output Files | Key Constraints |
+| ----- | ------ | ------------------ | ------------ | --------------- |
+| A0 Free text | `brief_to_req.py` | Numbered list + Open Questions | `robot_requirements.txt`, `artifacts/runs/<timestamp>/run_*.txt` | No JSON Schema; useful for observing wording drift |
+| A1 Requirements | `run_analyst.py` | Fixed four-field JSON | `artifacts/requirements.json` | Enforced schema + strict validation; schema does not pre-fill any answers |
+| B1 Plan | `run_planner.py` | `{strategy, decisions[], stop_condition}` JSON | `artifacts/plan.json` | Receives **only** the requirements — never the Analyst conversation (context isolation) |
+| B2 Code | `run_developer.py` | `{description, code}` JSON | `artifacts/developer_output.json` + `navigation_logic.py` | `code` must define a top-level function named `decide_next_move(state)` |
 
-## 准备环境
+Every stage sends `stream=false`, `think=false`, `options.temperature=0.2`, `options.num_predict=1024` to Ollama, and embeds `format=<stage-specific schema>` in the request body. `call_qwen()` is the HTTP client shared by all three stages; each caller injects its own schema.
 
-1. 安装 Python 3.10+（本机实测 3.13.2 可用）
-2. 安装 Ollama：从 https://ollama.com/download 下载并启动
-3. 拉取模型：
+## Testing Strategy
+
+Two levels of testing, as required by [`docs/SCSE '26 - Project Instructions - Testing.pdf`](docs/SCSE%20%27%26%20-%20Project%20Instructions%20-%20Testing.pdf):
+
+**Level 1 — Agent / Pipeline smoke tests.** Run the actual agents with their real inputs and let each agent's own validation accept or reject its output. Each smoke test writes the artifact to `artifacts/` and prints it after the test ends:
+
+- `tests/test_analyst.py` — calls the Analyst with `brief.txt`, writes `artifacts/requirements.json`.
+- `tests/test_planner.py` — calls the Planner with `artifacts/requirements.json`, writes `artifacts/plan.json`.
+- `tests/test_developer.py` — calls the Developer with `artifacts/plan.json`, writes `artifacts/developer_output.json` + `navigation_logic.py`, and asserts that `decide_next_move(state)` exists.
+
+**Level 2 — Behavioural testing.** Call `decide_next_move(state)` with known states and check the returned action:
+
+- `tests/test_generated_navigation_logic.py` — runs the sample case from the testing instructions, enumerates all 64 states, asserts safety / preference / stop invariants, and includes a bug-injection test to demonstrate that the suite actually catches bad navigation logic.
+
+When Ollama is unreachable, the smoke tests fall back to a mocked HTTP layer that returns a known-good envelope, so the suite still exercises the full validator + atomic-write path offline.
+
+## Prerequisites
+
+1. Install Python 3.10+ (tested locally with 3.13.2)
+2. Install Ollama from https://ollama.com/download and start it
+3. Pull the model:
    ```bash
    ollama pull qwen3:8b
    ```
-4. 保持 `ollama serve` 在后台运行（如果未以服务方式自动启动）
+4. Keep `ollama serve` running in the background (if it is not already running as a service)
 
-仅使用 Python 标准库，**无需** `pip install`。
+Only the Python standard library is used — **no** `pip install` required.
 
-## 默认配置
+## Default Configuration
 
-- 默认模型：`qwen3:8b`（不可静默替换为其他 Qwen 尺寸或云端 API）
-- 默认 Ollama 地址：`http://127.0.0.1:11434`
-- 默认超时：`300` 秒
-- 请求参数：`stream=false`、`think=false`、`options.temperature=0.2`、`options.num_predict=1024`
-- 每阶段带各自的 JSON Schema：`REQUIREMENTS_SCHEMA` / `PLANNER_SCHEMA` / `DEVELOPER_SCHEMA`
+- Default model: `qwen3:8b` (cannot be silently swapped for another Qwen size or a cloud API)
+- Default Ollama URL: `http://127.0.0.1:11434`
+- Default timeout: `300` seconds
+- Request parameters: `stream=false`, `think=false`, `options.temperature=0.2`, `options.num_predict=1024`
+- Per-stage JSON Schema: `REQUIREMENTS_SCHEMA` / `PLANNER_SCHEMA` / `DEVELOPER_SCHEMA`
 
-## 环境变量
+## Environment Variables
 
-| 变量 | 默认 | 说明 |
-| ---- | ---- | ---- |
-| `QWEN_MODEL` | `qwen3:8b` | 使用的模型 tag |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | 仅允许 localhost / 127.0.0.1 / ::1 |
-| `OLLAMA_TIMEOUT_SECONDS` | `300` | 必须为正数 |
-| `QWEN_THINK` | 未设置（等同于 `false`） | 仅对非结构化请求生效；结构化请求一律 `think=false` |
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `QWEN_MODEL` | `qwen3:8b` | Model tag to use |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Only `localhost` / `127.0.0.1` / `::1` allowed |
+| `OLLAMA_TIMEOUT_SECONDS` | `300` | Must be a positive number |
+| `QWEN_THINK` | not set (= `false`) | Only affects unstructured requests; structured requests always send `think=false` |
 
-## 作业生成命令（Windows PowerShell）
+## Generation Commands (Windows PowerShell)
 
-按顺序执行：
+Run them in order:
 
 ```powershell
 $env:QWEN_MODEL = "qwen3:8b"
 $env:OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 $env:OLLAMA_TIMEOUT_SECONDS = "300"
 
-# 阶段 A0：自由文本，可选，用于观察一致性
+# Stage A0 — free text; optional, useful for observing consistency
 python brief_to_req.py --runs 3
 
-# 阶段 A1：生成 requirements.json
+# Stage A1 — produce requirements.json
 python run_analyst.py
 
-# 阶段 B1：生成 plan.json（接收 requirements.json，不再接收 brief）
+# Stage B1 — produce plan.json (reads requirements.json, never the brief)
 python run_planner.py
 
-# 阶段 B2：生成 navigation_logic.py + developer_output.json（接收 plan.json）
+# Stage B2 — produce navigation_logic.py + developer_output.json (reads plan.json)
 python run_developer.py
 
-# 单元测试
+# Stage T1 — smoke tests for all three agents (real Ollama)
+python -m unittest tests.test_analyst tests.test_planner tests.test_developer -v
+
+# Stage T2 — behavioural tests for the generated navigation logic
+python -m unittest tests.test_generated_navigation_logic -v
+
+# Full offline test suite
 python -m unittest discover -s tests -v
 ```
 
-环境变量仅在当前终端会话中生效。默认配置已正确时，**不设置**这些变量也应能跑通。
+The environment variables only live for the current shell session. With sane defaults you should be able to run everything **without** setting them.
 
-## 离线测试
+## Offline Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-- 114 个 unittest 用例覆盖：
-  - `validate_requirements` / `validate_plan` / `validate_developer_output` 的所有 schema 边界
-  - 三阶段请求合同：`qwen3:8b` / `stream=false` / `think=false` / 各自带 Schema
-  - 阶段 A1 / A2 / A4 一致重试（首次坏 + 第二次好 = 成功；两次都坏 = 抛错且不超 2 次）
-  - 网络/超时/截断/404 等基础设施错误立即抛 `OllamaError`，**不**反复重试
-  - Planner / Developer 的 **context isolation**：只接收上一阶段产物，**不**接收 brief
-  - 各 CLI 的原子写入与「失败不覆盖旧文件」
-- 默认测试**不**要求 Ollama 在线，所有 HTTP 调用都已 mock
-- 真机验证见 `TEST_REPORT.md`
+The offline suite covers:
 
-## 输出文件清单
+- Schema boundaries for `validate_requirements` / `validate_plan` / `validate_developer_output`
+- Three-stage request contract: `qwen3:8b` / `stream=false` / `think=false` / per-stage Schema
+- One corrective retry at each stage (first bad + second good = success; two bads = raise, never more than 2 calls)
+- Network / timeout / truncation / 404 infrastructure errors raise `OllamaError` immediately — **no** retry loop
+- Planner / Developer **context isolation**: each stage receives the previous artifact, never the brief
+- Atomic writes for every CLI and the "failure preserves the old file" rule
+- `decide_next_move(state)` must be the entry point (wrong name / wrong parameter / wrong arity all rejected)
+- Behavioural tests for `decide_next_move`: sample fixture, all 64 states, safety / preference / stop invariants, bug injection
 
-| 文件 | 内容 | 是否真实 Qwen |
-| ---- | ---- | ------------ |
-| `robot_requirements.txt` | 阶段 A0 最新模型输出 | 是 |
-| `artifacts/runs/<时间戳>/run_*.txt` | 阶段 A0 各次原始响应 | 是 |
-| `artifacts/requirements.json` | 阶段 A1 四字段需求 | 是 |
-| `artifacts/plan.json` | 阶段 B1 计划 JSON | 是 |
-| `artifacts/developer_output.json` | 阶段 B2 envelope（含 description 与 code） | 是 |
-| `navigation_logic.py` | 阶段 B2 代码落地，供模拟器 `import` | 是 |
+The default test run **does not** require Ollama to be online; all HTTP calls in the offline tests are mocked.
 
-`navigation_logic.py` 是可被模拟器直接 `import` 的 Python 模块，已通过 `ast.parse` 解析验证。
+## Output Files
 
-## 必须知道的两条限制
+| File | Contents | Real Qwen? |
+| ---- | -------- | ---------- |
+| `robot_requirements.txt` | Latest Stage A0 model output | Yes |
+| `artifacts/runs/<timestamp>/run_*.txt` | Each Stage A0 raw response | Yes |
+| `artifacts/requirements.json` | Stage A1 four-field requirements | Yes |
+| `artifacts/plan.json` | Stage B1 plan JSON | Yes |
+| `artifacts/developer_output.json` | Stage B2 envelope (description + code) | Yes |
+| `navigation_logic.py` | Stage B2 code, defines `decide_next_move(state)` | Yes |
 
-1. **输出必须来自 Qwen**——Python 不会用预设字典冒充模型输出；schema 校验只检查结构，不证明语义正确。
-2. **JSON 结构校验 ≠ 完整语义校验**——例如 `goal` 字段只要非空字符串就通过校验，但内容是否准确反映 brief 需要人工复核；`navigation_logic.py` 通过 `ast.parse` 不代表它真的能跑通所有模拟环境。
+`navigation_logic.py` is a Python module that the simulator can `import` directly; the runner verifies it parses with `ast.parse` and that it defines `decide_next_move(state)` before persisting it.
 
-## 失败与重试
+## Two Caveats
 
-- 三阶段都有「首次 + 一次纠正」上限：第二次失败立刻抛 `*ValidationError`。
-- 网络/超时/模型缺失/服务不可达等基础设施错误立即抛 `OllamaError`，**不会**伪装成格式错误反复重试。
-- 命令行程序失败时返回非零退出码；已有的 `requirements.json` / `plan.json` / `developer_output.json` / `navigation_logic.py` 不会被覆盖，会打印「本次未生成新结果；现有文件可能属于之前的运行。」
+1. **Outputs must come from Qwen.** Python never fakes a preset dictionary in place of a model response; the schema check only verifies structure, not semantics.
+2. **JSON shape validation ≠ full semantic validation.** For example, `goal` only needs to be a non-empty string to pass; whether its content actually reflects the brief must be reviewed by a human. `navigation_logic.py` passing `ast.parse` and `decide_next_move(state)` validation does not prove it will behave well in every simulator environment.
 
-## 文件清单
+## Failure and Retry
 
-正式提交（课程要求的产出）：
+- Every stage has a "first attempt + one corrective retry" cap; on the second failure the corresponding `*ValidationError` is raised immediately.
+- Infrastructure errors — network, timeout, model missing, service unreachable — raise `OllamaError` immediately and are **not** dressed up as format errors and retried.
+- When a CLI fails it returns a non-zero exit code; any existing `requirements.json` / `plan.json` / `developer_output.json` / `navigation_logic.py` is preserved, and the message **"No new result was generated this run; existing files may belong to a previous run."** is printed to stderr.
 
-- `brief.txt` — 作业原始 brief
-- `brief_to_req.py` — 阶段 A0 自由文本提取
-- `analyst_agent.py` — 阶段 A1 Analyst Agent
-- `run_analyst.py` — 阶段 A1 CLI
-- `planner_agent.py` — 阶段 B1 Planner Agent
-- `run_planner.py` — 阶段 B1 CLI
-- `developer_agent.py` — 阶段 B2 Developer Agent
-- `run_developer.py` — 阶段 B2 CLI
-- `tests/` — 离线单元测试（114 用例）
-- `robot_requirements.txt` — 阶段 A0 真实输出
-- `artifacts/requirements.json` — 阶段 A1 真实输出
-- `artifacts/plan.json` — 阶段 B1 真实输出
-- `artifacts/developer_output.json` — 阶段 B2 envelope
-- `navigation_logic.py` — 阶段 B2 真实代码
-- `README.md`、`TEST_REPORT.md`、`.gitignore`
+## File Inventory
 
-辅助证据：阶段 A0 的 `artifacts/runs/<时间戳>/` 可保留以便复核，不强制提交。
+Required submissions (the course-mandated deliverables):
 
-## 常见错误
+- `brief.txt` — the original brief
+- `brief_to_req.py` — Stage A0 free-text extractor
+- `analyst_agent.py` — Stage A1 Analyst Agent
+- `run_analyst.py` — Stage A1 CLI
+- `planner_agent.py` — Stage B1 Planner Agent
+- `run_planner.py` — Stage B1 CLI
+- `developer_agent.py` — Stage B2 Developer Agent (requires `decide_next_move(state)`)
+- `run_developer.py` — Stage B2 CLI
+- `tests/test_analyst.py` — Stage T1 Analyst smoke test
+- `tests/test_planner.py` — Stage T1 Planner smoke test
+- `tests/test_developer.py` — Stage T1 Developer smoke test
+- `tests/test_generated_navigation_logic.py` — Stage T2 behavioural tests for `decide_next_move(state)`
+- `tests/` — additional offline unit tests (schema, contract, atomic writes, etc.)
+- `robot_requirements.txt` — Stage A0 real output
+- `artifacts/requirements.json` — Stage A1 real output
+- `artifacts/plan.json` — Stage B1 real output
+- `artifacts/developer_output.json` — Stage B2 envelope
+- `navigation_logic.py` — Stage B2 real code (defines `decide_next_move(state)`)
+- `README.md`, `TEST_REPORT.md`, `.gitignore`
+- `docs/SCSE '26 - Project Instructions - Testing.pdf` — testing-stage instructions
 
-| 现象 | 原因 | 处理 |
-| ---- | ---- | ---- |
-| `Cannot reach local Ollama` | `ollama serve` 未启动 | 启动 Ollama |
-| `Ollama HTTP 404 ... ollama pull qwen3:8b` | 模型未下载 | `ollama pull qwen3:8b` |
-| `Qwen timed out after 300 seconds` | 模型加载或机器较慢 | 调大 `OLLAMA_TIMEOUT_SECONDS` |
-| `*ValidationError ... twice` | 两次都未通过校验 | 检查提示词与上游产物；不会无限重试 |
+Supporting evidence: the per-run Stage A0 directories `artifacts/runs/<timestamp>/` may be kept for review; submission is not required.
+
+## Common Errors
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `Cannot reach local Ollama` | `ollama serve` not running | Start Ollama |
+| `Ollama HTTP 404 ... ollama pull qwen3:8b` | Model not pulled | `ollama pull qwen3:8b` |
+| `Qwen timed out after 300 seconds` | Slow model load or slow machine | Increase `OLLAMA_TIMEOUT_SECONDS` |
+| `*ValidationError ... twice` | Two failed validations in a row | Inspect the prompt and upstream artifact; no infinite retries |
+| `decide_next_move must take exactly one parameter named 'state'` | Developer Agent returned a function with the wrong signature | Re-run `run_developer.py`; the prompt explicitly requires `decide_next_move(state)` |

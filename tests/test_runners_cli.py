@@ -145,7 +145,7 @@ class RunPlannerCliTests(unittest.TestCase):
                 cwd=str(tmp_path),
             )
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("本次未生成新结果", proc.stderr)
+            self.assertIn("No new result was generated", proc.stderr)
             self.assertEqual(
                 json.loads(plan_file.read_text(encoding="utf-8")), {"old": True}
             )
@@ -249,7 +249,7 @@ class RunDeveloperCliTests(unittest.TestCase):
                 cwd=str(tmp_path),
             )
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("本次未生成新结果", proc.stderr)
+            self.assertIn("No new result was generated", proc.stderr)
             self.assertEqual(module_file.read_text(encoding="utf-8"), "# KEEP_ME\n")
             self.assertFalse(envelope_file.exists())
 

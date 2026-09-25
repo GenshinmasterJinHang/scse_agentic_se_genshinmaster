@@ -100,11 +100,11 @@ def main(argv: list[str] | None = None) -> int:
         save_envelope(envelope, args.envelope_output)
     except (OllamaError, DeveloperValidationError, ValueError, OSError, UnicodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        print("本次未生成新结果；现有文件可能属于之前的运行。", file=sys.stderr)
+        print("No new result was generated this run; existing files may belong to a previous run.", file=sys.stderr)
         return 1
     except Exception as exc:  # noqa: BLE001 -- runner is the last line of defense.
         print(f"UNEXPECTED ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print("本次未生成新结果；现有文件可能属于之前的运行。", file=sys.stderr)
+        print("No new result was generated this run; existing files may belong to a previous run.", file=sys.stderr)
         return 1
 
     print(f"Validated developer envelope saved to: {args.envelope_output.resolve()}")

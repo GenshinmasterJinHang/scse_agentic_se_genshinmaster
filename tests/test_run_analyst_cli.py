@@ -154,7 +154,7 @@ class RunAnalystCliTests(unittest.TestCase):
                 cwd=str(tmp_path),
             )
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("本次未生成新结果", proc.stderr)
+            self.assertIn("No new result was generated", proc.stderr)
             self.assertEqual(
                 json.loads(output.read_text(encoding="utf-8")),
                 {"old": "data", "marker": "KEEP_ME"},
@@ -191,7 +191,7 @@ class RunAnalystCliTests(unittest.TestCase):
             tmp_path = Path(tmp)
             brief = tmp_path / "brief.txt"
             # UTF-8 BOM + non-ASCII brief.
-            brief.write_bytes(b"\xef\xbb\xbf" + "包含中文 BRIEF".encode("utf-8"))
+            brief.write_bytes(b"\xef\xbb\xbf" + "café naïve résumé BRIEF".encode("utf-8"))
             output = tmp_path / "out.json"
             captured_file = tmp_path / "captured.txt"
 
@@ -228,7 +228,7 @@ class RunAnalystCliTests(unittest.TestCase):
                 Path(wrapper_path).unlink(missing_ok=True)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             self.assertTrue(captured_file.exists(), msg=f"missing: {captured_file}")
-            self.assertIn("包含中文", captured_file.read_text(encoding="utf-8"))
+            self.assertIn("café", captured_file.read_text(encoding="utf-8"))
 
 
 class AtomicWriteTests(unittest.TestCase):
